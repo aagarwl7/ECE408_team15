@@ -37,8 +37,8 @@ int main(int argc, char **argv) {
   srand(time(0));
 
   // Initialize temperature array
-  float curT = -0.05;
-  float T_step = -175.95/num_temps;
+  float curT = 0.05;
+  float T_step = 4./num_temps;
   for(int i = 0; i < num_temps; i++, curT += T_step) 
     Temp[i] = curT;
 
@@ -58,25 +58,30 @@ int main(int argc, char **argv) {
       int rand_ind = (int)(((float)rand()/RAND_MAX)*latt_len);
       float new_val = rand_latt_elem(); 
       // Calculate effect of perturbation and randomly accept
-      float delta_nrg = 2*cos(new_val-latt[rand_ind])-2.;
+      float delta_nrg = 2.*cos(new_val-latt[rand_ind])-2.; // -2. accounts for k == rand_ind
       for(int k = 0; k < latt_len; k++)
 	delta_nrg -= 2*cos(new_val-latt[k])-2*cos(latt[rand_ind]-latt[k]);
-      if((((float)rand()/RAND_MAX) < exp(-delta_nrg/Temp[i])) || delta_nrg < 0) {
+      delta_nrg /= latt_len;
+      // original code contained bug, exponent on e should be negative!!!
+      // why are temps in the gold graphs and XY.py graphs different?
+      if((((float)rand()/RAND_MAX) < exp(-delta_nrg/Temp[i])) || delta_nrg < 0) { 
 	nrg += delta_nrg;
 	magn.x += cos(new_val) - cos(latt[rand_ind]);
 	magn.y += sin(new_val) - cos(latt[rand_ind]);
 	latt[rand_ind] = new_val;
       }
       // Save energy and magnetization if we are past base timestep
+      /* Why are we not just taking final energy, magnetization??
       if(j >= INITIAL_AVG_IND) {
 	avg_nrg += nrg;
 	avg_mag += norm_vect_len(magn);
       }
+      */
     }
-    avg_nrg /= latt_len-INITIAL_AVG_IND;
-    avg_mag /= latt_len-INITIAL_AVG_IND;
-    Enrg[i] = avg_nrg;
-    Magn[i] = avg_mag;
+    //avg_nrg /= latt_len-INITIAL_AVG_IND;
+    //avg_mag /= latt_len-INITIAL_AVG_IND;
+    Enrg[i] = nrg;
+    Magn[i] = norm_vect_len(magn);
   }
 
   write_data(Temp, Enrg, Magn, num_temps);
@@ -84,6 +89,7 @@ int main(int argc, char **argv) {
   free(Temp);
   free(Enrg);
   free(Magn);
+  free(latt);
 }
 
 float calc_energy(float *latt, int latt_len) {
