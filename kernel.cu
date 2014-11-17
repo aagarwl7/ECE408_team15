@@ -9,34 +9,66 @@ typedef struct {
   int num_elem;
 } magn_t;
 
+
+__device__ float global_temp[BLOCK_SIZE];
 __global__ void calc_energy(float *latt, unsigned int latt_len, float *nrg) {
   unsigned int index = blockIdx.x * BLOCK_SIZE + threadIdx.x;
+
+  __shared__ float local_temp[BLOCK_SIZE/2];
+  if(threadIdx.x < BLOCK_SIZE/2) local_temp[threadIdx.x] = 0.0;
+
+  if(index >= latt_len) return;
+
   float retval = 2.0;
   float spin = latt[index];
   for(int i = 0; i < latt_len; i++)
-    retval -= 2*cos(latt[i] - spin);
+    retval -= 2*__cosf(latt[i] - spin);
   retval /= latt_len;
-  atomicAdd(nrg, retval);
+  if(threadIdx.x > BLOCK_SIZE/2) local_temp[index-BLOCK_SIZE/2] = retval;
+  __syncthreads();
+
+  for(int stride = 2; stride < BLOCK_SIZE; stride <<= 1) {
+    if(index < BLOCK_SIZE/stride) 
+      retval += local_temp[threadIdx.x];
+    __syncthreads();
+    if(index >= BLOCK_SIZE/(stride<<1) && index < BLOCK_SIZE/stride)
+      local_temp[threadIdx.x-(BLOCK_SIZE/(stride<<1))] = retval;
+    __syncthreads();
+  }
+
+  if(threadIdx.x == 0) global_temp[blockIdx.x] = retval;
+  __syncthreads();
+
+  if(index >= gridDim.x) return;
+  for(int stride = 2; stride < gridDim.x; stride <<= 1) {
+    if(index % stride == 0)
+      global_temp[index] += global_temp[index + stride];
+  }
+  __syncthreads();
+
+  if(index == 0) *nrg = global_temp[0];
+  
+
 }
 
 __global__ void iterate_nrg(float temp, float *latt, unsigned int latt_len, int *rand_inds, float *rand_elems, float *rands, float *nrg) {
   int index = blockIdx.x * BLOCK_SIZE + threadIdx.x;
   int rand_ind = rand_inds[index];
   float new_val = rand_elems[index];
-  float delta_nrg = 2.*cos(new_val-latt[rand_ind])-2.;
+  float delta_nrg = 2.*__cosf(new_val-latt[rand_ind])-2.;
   for(int i = 0; i < latt_len; i++)
-    delta_nrg -= 2*cos(new_val-latt[i])-2*cos(latt[rand_ind]-latt[i]);
+    delta_nrg -= 2*__cosf(new_val-latt[i])-2*__cosf(latt[rand_ind]-latt[i]);
   delta_nrg /= latt_len;
   if(rands[index] < exp(-delta_nrg/temp) || delta_nrg < 0) {
     latt[rand_ind] = new_val;
   }
 }
 	
-void find_xy_parameters(float temp, float *latt, unsigned int latt_len, unsigned int num_iter, float *nrg, float *mag) {
+void find_xy_parameters(float *temp, float *latt, unsigned int latt_len, unsigned int num_steps, float *nrg, float *mag) {
   cudaError_t cuda_ret;
   dim3 grid_dim = dim3((int)ceil(((float)latt_len)/BLOCK_SIZE), 1, 1);
   dim3 block_dim = dim3(BLOCK_SIZE, 1, 1);
-
+  
   int arr_len = grid_dim.x*block_dim.x;
 
   int *rand_inds_d;
@@ -53,12 +85,12 @@ void find_xy_parameters(float temp, float *latt, unsigned int latt_len, unsigned
   float rand_arr[arr_len];
 
   calc_energy<<<grid_dim, block_dim>>>(latt, latt_len, nrg);
-  for(int i = 0; i < num_iter/(grid_dim.x*block_dim.x); i++) {
-    
-    for(int i = 0; i < arr_len; i++) {
-      rand_ind_arr[i] = rand_latt_ind();
-      rand_spin_arr[i] = rand_latt_elem();
-      rand_arr[i] = uniform();
+  for(int i = 0; i < num_steps; i++) {
+      
+    for(int j = 0; j < arr_len; j++) {
+      rand_ind_arr[j] = j;//rand_latt_ind();
+      rand_spin_arr[j] = rand_latt_elem();
+      rand_arr[j] = uniform();
     }
     cuda_ret = cudaMemcpy(rand_inds_d, rand_ind_arr, arr_len * sizeof(float), cudaMemcpyHostToDevice);
     if(cuda_ret != cudaSuccess) FATAL("Unable to copy from host to device");
@@ -69,6 +101,10 @@ void find_xy_parameters(float temp, float *latt, unsigned int latt_len, unsigned
     cudaDeviceSynchronize();
 
     iterate_nrg<<<grid_dim, block_dim>>>(temp, latt, latt_len, rand_inds_d, rand_elems_d, rands_d, nrg);
-    calc_energy<<<grid_dim, block_dim>>>(latt, latt_len, nrg);
   }
+  calc_energy<<<grid_dim, block_dim>>>(latt, latt_len, nrg);
+
+
 }
+
+
