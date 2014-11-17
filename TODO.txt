@@ -2,6 +2,7 @@ Bugs:
 - energy calculation only adds element contributions from one block
 
 Additional Features:
+- add magnetization calculation kernel
 - both the energy calcuation and the energy difference calculation have loops over lattice 
 	elements that could be further parallelized
 - parallelize the loop over all temperatures (loop in main.cu)
