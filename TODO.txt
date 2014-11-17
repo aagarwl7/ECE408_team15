@@ -1,0 +1,12 @@
+Bugs:
+- energy calculation only adds element contributions from one block
+
+Additional Features:
+- both the energy calcuation and the energy difference calculation have loops over lattice 
+	elements that could be further parallelized
+- parallelize the loop over all temperatures (loop in main.cu)
+- take average of energys in last few iterations of for loop over steps in kernel.cu
+	(may not be necessary when using enough lattice elements, which requires fixing
+			 energy calculation bug)
+- move random number generation into kernel
+- telescope into discontinuity in temp vs energy; may need extra lattice elements, iterations

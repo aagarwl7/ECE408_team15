@@ -1,7 +1,7 @@
 #include"support.h"
 
 #define norm_vect_len(m) (sqrt(pow((m).x, 2) + pow((m).y, 2))/(m).num_elem)
-#define BLOCK_SIZE 512
+#define BLOCK_SIZE 1024
 
 typedef struct {
   float x;
@@ -36,18 +36,21 @@ __global__ void calc_energy(float *latt, unsigned int latt_len, float *nrg) {
     __syncthreads();
   }
 	
-  if(threadIdx.x == 0) global_temp[blockIdx.x] = retval;
+  if(threadIdx.x == 0) {
+		global_temp[blockIdx.x] = retval;
+	}
   __syncthreads();
-	
+
   if(index >= gridDim.x) return;
   for(int stride = 2; stride < gridDim.x; stride <<= 1) {
     if(index % stride == 0)
       global_temp[index] += global_temp[index + (stride >> 1)];
   }
   __syncthreads();
-	
-  if(index == 0) *nrg = global_temp[0];
-  
+
+  if(index == 0) {
+		*nrg = global_temp[0];
+	}
 
 }
 
