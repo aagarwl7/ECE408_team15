@@ -61,6 +61,9 @@ int main(int argc, char **argv) {
   cuda_ret = cudaMemset(Enrg_d, 0, num_temps*sizeof(float));
   if(cuda_ret != cudaSuccess) FATAL("Unable to zero energies");
 
+	printf("Running trials..."); fflush(stdout);
+	startTime(&timer);
+
   for(int i = 0; i < num_temps; i++) {
     init_latt(latt_h, latt_len);
     cuda_ret = cudaMemcpy(latt_d, latt_h, latt_len*sizeof(float), cudaMemcpyHostToDevice);
@@ -68,6 +71,9 @@ int main(int argc, char **argv) {
     cudaDeviceSynchronize();
     find_xy_parameters(Temp_h[i], latt_d, latt_len, num_steps, Enrg_d+i, Magn_d+i);
   }
+
+	cudaDeviceSynchronize();
+	stopTime(&timer); printf("%f s\n", elapsedTime(timer));
 
   cuda_ret = cudaMemcpy(Enrg_h, Enrg_d, num_temps*sizeof(float), cudaMemcpyDeviceToHost);
   if(cuda_ret != cudaSuccess) FATAL("Unable to copy results from device");
