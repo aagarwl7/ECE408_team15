@@ -111,6 +111,10 @@ void find_xy_parameters(float temp, float *latt, unsigned int latt_len, unsigned
 	free(rand_ind_arr);
 	free(rand_spin_arr);
 	free(rand_arr);
+
+	cudaFree(rand_inds_d);
+	cudaFree(rand_elems_d);
+	cudaFree(rands_d);
 }
 
 
