@@ -49,9 +49,9 @@ int main(int argc, char **argv) {
     for(int j = 0; j < latt_len; j++) {
       latt[j] = rand_latt_elem();
     }
-    float nrg = calc_energy(latt, latt_len);
+    //float nrg = calc_energy(latt, latt_len);
     magn_t magn;
-    calc_mag(latt, latt_len, &magn);
+		//calc_mag(latt, latt_len, &magn);
     // Take q timesteps
     for(int j = 0; j < num_steps; j++) {
       // Randomly choose pertubation to lattice
@@ -60,27 +60,28 @@ int main(int argc, char **argv) {
       // Calculate effect of perturbation and randomly accept
       float delta_nrg = 2.*cos(new_val-latt[rand_ind])-2.; // -2. accounts for k == rand_ind
       for(int k = 0; k < latt_len; k++)
-	delta_nrg -= 2*cos(new_val-latt[k])-2*cos(latt[rand_ind]-latt[k]);
+				delta_nrg -= 2*cos(new_val-latt[k])-2*cos(latt[rand_ind]-latt[k]);
       delta_nrg /= latt_len;
       // original code contained bug, exponent on e should be negative!!!
       // why are temps in the gold graphs and XY.py graphs different?
       if((((float)rand()/RAND_MAX) < exp(-delta_nrg/Temp[i])) || delta_nrg < 0) { 
-	nrg += delta_nrg;
-	magn.x += cos(new_val) - cos(latt[rand_ind]);
-	magn.y += sin(new_val) - cos(latt[rand_ind]);
-	latt[rand_ind] = new_val;
+				//nrg += delta_nrg;
+				//magn.x += cos(new_val) - cos(latt[rand_ind]);
+				//magn.y += sin(new_val) - cos(latt[rand_ind]);
+				latt[rand_ind] = new_val;
       }
       // Save energy and magnetization if we are past base timestep
       /* Why are we not just taking final energy, magnetization??
-      if(j >= INITIAL_AVG_IND) {
-	avg_nrg += nrg;
-	avg_mag += norm_vect_len(magn);
-      }
+				 if(j >= INITIAL_AVG_IND) {
+				 avg_nrg += nrg;
+				 avg_mag += norm_vect_len(magn);
+				 }
       */
     }
     //avg_nrg /= latt_len-INITIAL_AVG_IND;
     //avg_mag /= latt_len-INITIAL_AVG_IND;
-    Enrg[i] = nrg;
+    Enrg[i] = calc_energy(latt, latt_len);
+		calc_mag(latt, latt_len, &magn);
     Magn[i] = norm_vect_len(magn);
   }
 
