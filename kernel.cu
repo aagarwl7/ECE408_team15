@@ -1,4 +1,7 @@
 #include"support.h"
+#include<cuda.h>
+#include<curand.h>
+#include<time.h>
 
 #define norm_vect_len(m) (sqrt(pow((m).x, 2) + pow((m).y, 2))/(m).num_elem)
 #define BLOCK_SIZE 1024
@@ -54,11 +57,11 @@ __global__ void calc_energy(float *latt, unsigned int latt_len, float *nrg) {
 
 }
 
-__global__ void iterate_nrg(float temp, float *latt, unsigned int latt_len, int *rand_inds, float *rand_elems, float *rands, float *nrg) {
+__global__ void iterate_nrg(float temp, float *latt, unsigned int latt_len, unsigned int *rand_inds, float *rand_elems, float *rands, float *nrg) {
   int index = blockIdx.x * BLOCK_SIZE + threadIdx.x;
 	if(index >= latt_len) return;
-  int rand_ind = rand_inds[index];
-  float new_val = rand_elems[index];
+  unsigned int rand_ind = rand_inds[index] % latt_len;
+  float new_val = rand_elems[index] * PI_2;
   float delta_nrg = 2.*__cosf(new_val-latt[rand_ind])-2.;
   for(int i = 0; i < latt_len; i++)
     delta_nrg -= 2*__cosf(new_val-latt[i])-2*__cosf(latt[rand_ind]-latt[i]);
@@ -70,12 +73,13 @@ __global__ void iterate_nrg(float temp, float *latt, unsigned int latt_len, int 
 	
 void find_xy_parameters(float temp, float *latt, unsigned int latt_len, unsigned int num_steps, float *nrg, float *mag) {
   cudaError_t cuda_ret;
+	curandGenerator_t gen;
   dim3 grid_dim = dim3((int)ceil(((float)latt_len)/BLOCK_SIZE), 1, 1);
   dim3 block_dim = dim3(BLOCK_SIZE, 1, 1);
   
   int arr_len = latt_len;
 
-  int *rand_inds_d;
+  unsigned int *rand_inds_d;
   float *rand_elems_d, *rands_d;
   cuda_ret = cudaMalloc((void **)&rand_inds_d, arr_len * sizeof(int));
   if(cuda_ret != cudaSuccess) FATAL("Unable to allocate device memory");
@@ -84,33 +88,18 @@ void find_xy_parameters(float temp, float *latt, unsigned int latt_len, unsigned
   cuda_ret = cudaMalloc((void **)&rands_d, arr_len * sizeof(float));
   if(cuda_ret != cudaSuccess) FATAL("Unable to allocate device memory");
 
-  int *rand_ind_arr = (int *)malloc(arr_len*sizeof(float));
-  float *rand_spin_arr = (float *)malloc(arr_len*sizeof(float));
-  float *rand_arr = (float *)malloc(arr_len*sizeof(float));
+	curandCreateGenerator(&gen, CURAND_RNG_QUASI_SOBOL32);
+	curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
 
   for(int i = 0; i < num_steps; i++) {
-      
-    for(int j = 0; j < arr_len; j++) {
-      rand_ind_arr[j] = j;//rand_latt_ind();
-      rand_spin_arr[j] = rand_latt_elem();
-      rand_arr[j] = uniform();
-    }
-    cuda_ret = cudaMemcpy(rand_inds_d, rand_ind_arr, arr_len * sizeof(float), cudaMemcpyHostToDevice);
-    if(cuda_ret != cudaSuccess) FATAL("Unable to copy from host to device");
-    cuda_ret = cudaMemcpy(rand_elems_d, rand_spin_arr, arr_len * sizeof(float), cudaMemcpyHostToDevice);    
-    if(cuda_ret != cudaSuccess) FATAL("Unable to copy from host to device");
-    cuda_ret = cudaMemcpy(rands_d, rand_arr, arr_len * sizeof(float), cudaMemcpyHostToDevice);    
-    if(cuda_ret != cudaSuccess) FATAL("Unable to copy from host to device");
-    cudaDeviceSynchronize();
+		curandGenerateUniform(gen, rand_elems_d, arr_len);
+		curandGenerateUniform(gen, rands_d, arr_len);
+		curandGenerate(gen, rand_inds_d, arr_len);
 
     iterate_nrg<<<grid_dim, block_dim>>>(temp, latt, latt_len, rand_inds_d, rand_elems_d, rands_d, nrg);
   }
 	cudaDeviceSynchronize();
   calc_energy<<<grid_dim, block_dim>>>(latt, latt_len, nrg);
-
-	free(rand_ind_arr);
-	free(rand_spin_arr);
-	free(rand_arr);
 
 	cudaFree(rand_inds_d);
 	cudaFree(rand_elems_d);
