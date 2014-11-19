@@ -9,8 +9,9 @@ Additional Features:
 - take average of energys in last few iterations of for loop over steps in kernel.cu
 	(may not be necessary when using enough lattice elements, which requires fixing
 			 energy calculation bug)
-- move random number generation into kernel !!
+- move random number generation into kernel !! DONE
 - telescope into discontinuity in temp vs energy; may need extra lattice elements, iterations
 - store energy contributions of each point in lattice in memory
 	- may not work since every change in lattice changes every contribution, but could be good estimate if lattice values change frequently enough
 - use shared memory in energy difference calculations !!
+- generate lattices on device, using rng !!
