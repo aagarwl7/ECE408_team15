@@ -12,11 +12,11 @@ int main(int argc, char **argv) {
   float *Temp_h;
   float *Enrg_h;
   float *Magn_h;
-  float *latt_h;
+  float **latt_arr_h;
   float *Temp_d;
   float *Enrg_d;
   float *Magn_d;
-  float *latt_d;
+  float **latt_arr_d;
   int num_temps, latt_len, num_steps;
   cudaError_t cuda_ret;
 
@@ -35,12 +35,12 @@ int main(int argc, char **argv) {
   Temp_h = (float *)malloc(num_temps*sizeof(float));
   Enrg_h = (float *)malloc(num_temps*sizeof(float));
   Magn_h = (float *)malloc(num_temps*sizeof(float));
-  latt_h = (float *)malloc(latt_len*sizeof(float));
+  latt_arr_h = (float **)malloc(num_temps*sizeof(float *));
 
   stopTime(&timer); printf("%f s\n", elapsedTime(timer));
 
-  init_temp(Temp_h, num_temps);
-	
+	init_temp(Temp_h, num_temps);
+
   printf("Allocating device variables..."); fflush(stdout);
   startTime(&timer);
 
@@ -50,27 +50,28 @@ int main(int argc, char **argv) {
   if(cuda_ret != cudaSuccess) FATAL("Unable to allocate device memory");
   cuda_ret = cudaMalloc((void **)&Magn_d, num_temps*sizeof(float));
   if(cuda_ret != cudaSuccess) FATAL("Unable to allocate device memory");
-  cuda_ret = cudaMalloc((void **)&latt_d, latt_len*sizeof(float));
-  if(cuda_ret != cudaSuccess) FATAL("Unable to allocate device memory");
+	cuda_ret = cudaMalloc((void **)&latt_arr_d, num_temps*sizeof(float *));
+	if(cuda_ret != cudaSuccess) FATAL("Unable to allocate device memory");
+	for(int i = 0; i < num_temps; i++) {
+		cuda_ret = cudaMalloc((void **)latt_arr_h+i, latt_len*sizeof(float));
+		if(cuda_ret != cudaSuccess) FATAL("Unable to allocate device memory");
+	}
 	
   cudaDeviceSynchronize();
   stopTime(&timer); printf("%f s\n", elapsedTime(timer));
 
   //cuda_ret = cudaMemcpy(Temp_d, Temp_H, num_temps*sizeof(float), cudaMemcpyHostToDevice);
 
-  cuda_ret = cudaMemset(Enrg_d, 0, num_temps*sizeof(float));
+  cuda_ret = cudaMemset(Enrg_d, 5, num_temps*sizeof(float));
   if(cuda_ret != cudaSuccess) FATAL("Unable to zero energies");
+
+	cuda_ret = cudaMemcpy(latt_arr_d, latt_arr_h, num_temps*sizeof(float *), cudaMemcpyHostToDevice);
+	if(cuda_ret != cudaSuccess) FATAL("Unable to copy from host to device");
 
 	printf("Running trials..."); fflush(stdout);
 	startTime(&timer);
 
-  for(int i = 0; i < num_temps; i++) {
-    init_latt(latt_h, latt_len);
-    cuda_ret = cudaMemcpy(latt_d, latt_h, latt_len*sizeof(float), cudaMemcpyHostToDevice);
-    if(cuda_ret != cudaSuccess) FATAL("Unable to copy lattice to device");
-    cudaDeviceSynchronize();
-    find_xy_parameters(Temp_h[i], latt_d, latt_len, num_steps, Enrg_d+i, Magn_d+i);
-  }
+	//find_xy_parameters(num_temps, latt_arr_d, latt_len, num_steps, Enrg_d, Magn_d);
 
 	cudaDeviceSynchronize();
 	stopTime(&timer); printf("%f s\n", elapsedTime(timer));
@@ -86,12 +87,12 @@ int main(int argc, char **argv) {
   free(Temp_h);
   free(Enrg_h);
   free(Magn_h);
-  free(latt_h);
+  free(latt_arr_h);
 
   cudaFree(Temp_d);
   cudaFree(Enrg_d);
   cudaFree(Magn_d);
-  cudaFree(latt_d);
+  cudaFree(latt_arr_d);
 
   return 0;
 }

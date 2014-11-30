@@ -5,6 +5,7 @@
 
 #define MIN_TEMP 0.05
 #define MAX_TEMP 4.0
+#define TEMP_DIFF 3.95
 #define PI_2 6.283185307
 #define rand_latt_elem() (PI_2*uniform())
 #define rand_latt_ind() ((int)(latt_len*uniform()))

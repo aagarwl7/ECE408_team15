@@ -14,11 +14,13 @@ typedef struct {
 
 
 __device__ float global_temp[BLOCK_SIZE];
-__global__ void calc_energy(float *latt, unsigned int latt_len, float *nrg) {
+__global__ void calc_energy(float **latt_arr, unsigned int latt_len, float *nrg, int ind) {
   unsigned int index = blockIdx.x * BLOCK_SIZE + threadIdx.x;
 
   __shared__ float local_temp[BLOCK_SIZE/2];
   if(threadIdx.x < BLOCK_SIZE/2) local_temp[threadIdx.x] = 0.0;
+
+	float *latt = latt_arr[ind];
 
   if(index >= latt_len) return;
 	
@@ -56,42 +58,49 @@ __global__ void calc_energy(float *latt, unsigned int latt_len, float *nrg) {
 	}
 
 }
-__global__ void iterate_nrg(float temp, float *latt, unsigned int latt_len, int num_steps, curandState *states, float *nrg) {
-  int index = blockIdx.x * BLOCK_SIZE + threadIdx.x;
+__global__ void iterate_nrg(int num_temps, float **latt_arr, unsigned int latt_len, int num_steps, curandState *states, float *Enrg) {
+	int index = blockIdx.x * BLOCK_SIZE + threadIdx.x;
+	Enrg[index] = 5.0;
   if(index >= latt_len) return;
   //__shared__ float temp_latt[BLOCK_SIZE];
   curandState s = states[index];
   curand_init(1234, index, 0, &s);
-
-	latt[index] = curand_uniform(&s) * PI_2;
+	
+	for(int i = 0; i < num_temps; i++) {
+		latt_arr[i][index] = curand_uniform(&s) * PI_2;
+	}
 	__syncthreads();
 
-  for(int i = 0; i < num_steps; i++) {
-    unsigned int rand_ind = index;
-    float new_val = curand_uniform(&s) * PI_2;
-    float old_val = latt[rand_ind];
-    float delta_nrg = 2.*__cosf(new_val-latt[rand_ind])-2.;
-		/*
-    for(int off = 0; off < latt_len; off += BLOCK_SIZE) {
-      temp_latt[threadIdx.x] = latt[off+threadIdx.x];
-      __syncthreads();
-      for(int j = 0; j < BLOCK_SIZE; j++)
+	int temp_i = 0;
+	for(float temp = MIN_TEMP; temp < MAX_TEMP; temp += TEMP_DIFF/num_temps, temp_i++) {
+		float *latt = latt_arr[temp_i];
+		for(int i = 0; i < num_steps; i++) {
+			unsigned int rand_ind = index;
+			float new_val = curand_uniform(&s) * PI_2;
+			float old_val = latt[rand_ind];
+			float delta_nrg = 2.*__cosf(new_val-latt[rand_ind])-2.;
+			/*
+				for(int off = 0; off < latt_len; off += BLOCK_SIZE) {
+				temp_latt[threadIdx.x] = latt[off+threadIdx.x];
+				__syncthreads();
+				for(int j = 0; j < BLOCK_SIZE; j++)
         delta_nrg -= 2*__cosf(new_val-temp_latt[j+off])-2*__cosf(old_val-temp_latt[j+off]);
-    }
-    delta_nrg /= latt_len;
-    if(curand_uniform(&s) < exp(-delta_nrg/temp) || delta_nrg < 0) {
-      latt[rand_ind] = new_val;
-    }
-		*/
-		for(int j = 0; j < latt_len; j++)
-			delta_nrg -= 2*__cosf(new_val-latt[j])-2*__cosf(old_val-latt[j]);
-		delta_nrg /= latt_len;
-    if(curand_uniform(&s) < exp(-delta_nrg/temp) || delta_nrg < 0)
-      latt[rand_ind] = new_val;
-  }
+				}
+				delta_nrg /= latt_len;
+				if(curand_uniform(&s) < exp(-delta_nrg/temp) || delta_nrg < 0) {
+				latt[rand_ind] = new_val;
+				}
+			*/
+			for(int j = 0; j < latt_len; j++)
+				delta_nrg -= 2*__cosf(new_val-latt[j])-2*__cosf(old_val-latt[j]);
+			delta_nrg /= latt_len;
+			if(curand_uniform(&s) < exp(-delta_nrg/temp) || delta_nrg < 0)
+				latt[rand_ind] = new_val;
+		}
+	}
 }
 
-void find_xy_parameters(float temp, float *latt, unsigned int latt_len, unsigned int num_steps, float *nrg, float *mag) {
+void find_xy_parameters(int num_temps, float **latt_arr, unsigned int latt_len, unsigned int num_steps, float *Enrg, float *Magn) {
   cudaError_t cuda_ret;
   dim3 grid_dim = dim3((int)ceil(((float)latt_len)/BLOCK_SIZE), 1, 1);
   dim3 block_dim = dim3(BLOCK_SIZE, 1, 1);
@@ -100,11 +109,12 @@ void find_xy_parameters(float temp, float *latt, unsigned int latt_len, unsigned
   cuda_ret = cudaMalloc((void **)&states, latt_len*sizeof(curandState));
   if(cuda_ret != cudaSuccess) FATAL("Unable to alocate device memory");
 
-  iterate_nrg<<<grid_dim, block_dim>>>(temp, latt, latt_len, num_steps, states, nrg);
-
+  iterate_nrg<<<grid_dim, block_dim>>>(num_temps, latt_arr, latt_len, num_steps, states, Enrg);
+	/*
   cudaDeviceSynchronize();
-  calc_energy<<<grid_dim, block_dim>>>(latt, latt_len, nrg);
-
+	for(int i = 0; i < num_temps; i++)
+		calc_energy<<<grid_dim, block_dim>>>(latt_arr, latt_len, Enrg+i, i);
+	*/
   cudaFree(states);
 
 }
