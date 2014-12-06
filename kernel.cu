@@ -67,35 +67,77 @@ __device__ float calc_delta_nrg(float new_val, float old_val, float *latt, int l
 	return delta_nrg;
 }
 __device__ void perturb_latt(float *latt, int latt_len, int num_steps, float temp, int index, curandState s) {
-		float old_val = latt[index];
-		for(int i = 0; i < num_steps; i++) {
-			float new_val = curand_uniform(&s) * PI_2;
-			float delta_nrg = calc_delta_nrg(new_val, old_val, latt, latt_len);
-			if((delta_nrg < 0) && (curand_uniform(&s) < exp(-delta_nrg/temp))) {
-				//latt[index] = new_val;
-				old_val = new_val;
-			}
+	float old_val = latt[index];
+	for(int i = 0; i < num_steps; i++) {
+		float new_val = curand_uniform(&s) * PI_2;
+		float delta_nrg = calc_delta_nrg(new_val, old_val, latt, latt_len);
+		if((delta_nrg < 0) || (curand_uniform(&s) < exp(-delta_nrg/temp))) {
+			latt[index] = new_val;
+			old_val = new_val;
 		}
-		latt[index] = old_val;
+	}
 }
-__global__ void iterate_nrg(int num_temps, float **latt_arr, unsigned int latt_len, int num_steps, curandState *states, float *Enrg) {
+__global__ void iterate_nrg(int num_temps, float **latt_arr, unsigned int latt_len, int num_steps, curandState *states, float *Enrg, int temp_i, float temp) {
 	int index = blockIdx.x * BLOCK_SIZE + threadIdx.x;
   if(index >= latt_len) return;
   //__shared__ float temp_latt[BLOCK_SIZE];
-  curandState s = states[index];
-  curand_init(1234, index, 0, &s);
-	
-	for(int i = 0; i < num_temps; i++) {
-		latt_arr[i][index] = curand_uniform(&s) * PI_2;
+
+	curandState s;
+	if(temp_i == 0) {
+		curand_init(1234, index, 0, states+index);
+		s = states[index];
+
+		for(int i = 0; i < num_temps; i++) {
+			latt_arr[i][index] = curand_uniform(&s) * PI_2;
+		}
 	}
+	else
+		s = states[index];
 	
 	__syncthreads();
 	
-	float temp = 4.0;
-	int temp_i = 0;
-	for(float temp = MIN_TEMP; temp < MAX_TEMP; temp += TEMP_DIFF/num_temps, temp_i++) {
-		perturb_latt(latt_arr[temp_i], latt_len, num_steps, temp, index, s);
+	float *latt = latt_arr[temp_i];
+	perturb_latt(latt, latt_len, num_steps, temp, index, s);
+
+  __shared__ float local_temp[BLOCK_SIZE/2];
+  if(threadIdx.x < BLOCK_SIZE/2) local_temp[threadIdx.x] = 0.0;
+
+  if(index >= latt_len) return;
+	
+  float retval = 2.0;
+  float spin = latt[index];
+	
+  for(int i = 0; i < latt_len; i++)
+    retval -= 2*__cosf(latt[i] - spin);
+  retval /= latt_len;
+	if(threadIdx.x > BLOCK_SIZE/2) local_temp[threadIdx.x-BLOCK_SIZE/2] = retval;
+  __syncthreads();
+  for(int stride = 2; stride < BLOCK_SIZE; stride <<= 1) {
+    if(index < BLOCK_SIZE/stride) 
+      retval += local_temp[threadIdx.x];
+    __syncthreads();
+    if(index >= BLOCK_SIZE/(stride<<1) && index < BLOCK_SIZE/stride)
+      local_temp[threadIdx.x-(BLOCK_SIZE/(stride<<1))] = retval;
+    __syncthreads();
+  }
+	
+  if(threadIdx.x == 0) {
+		global_temp[blockIdx.x] = retval;
 	}
+  __syncthreads();
+	
+  if(index >= gridDim.x) return;
+  for(int stride = 2; stride < gridDim.x; stride <<= 1) {
+    if(index % stride == 0)
+      global_temp[index] += global_temp[index + (stride >> 1)];
+  }
+  __syncthreads();
+	
+  if(index == 0) {
+		*Enrg = global_temp[0];
+	}
+
+
 }
 
 
@@ -121,10 +163,14 @@ void find_xy_parameters(int num_temps, float **latt_arr, unsigned int latt_len, 
   cuda_ret = cudaMalloc((void **)&states, latt_len*sizeof(curandState));
   if(cuda_ret != cudaSuccess) FATAL("Unable to alocate device memory");
 
-  iterate_nrg<<<grid_dim, block_dim>>>(num_temps, latt_arr, latt_len, num_steps, states, Enrg);
+	for(int i = 0; i < num_temps; i++) {
+		float temp = MIN_TEMP+i*TEMP_DIFF/num_temps;
+		//printf("temp %f\n", temp);
+		iterate_nrg<<<grid_dim, block_dim>>>(num_temps, latt_arr, latt_len, num_steps, states, Enrg+i, i, temp);
+	}
   cudaDeviceSynchronize();
-	for(int i = 0; i < num_temps; i++)
-		calc_energy<<<grid_dim, block_dim>>>(latt_arr, latt_len, Enrg+i, i);
+	//for(int i = 0; i < num_temps; i++)
+	//	calc_energy<<<grid_dim, block_dim>>>(latt_arr, latt_len, Enrg+i, i);
   cudaFree(states);
 
 }
