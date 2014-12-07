@@ -28,6 +28,7 @@ int main(int argc, char **argv) {
   num_temps = atoi(argv[1]);
   latt_len = atoi(argv[2]); 
   num_steps = atoi(argv[3]);
+	printf("Running with num_temps %i, latt_len %i and num_steps %i\n", num_temps, latt_len, num_steps);
 
   printf("Allocating host variables..."); fflush(stdout);
   startTime(&timer);
@@ -77,11 +78,14 @@ int main(int argc, char **argv) {
 	cudaDeviceSynchronize();
 	stopTime(&timer); printf("%f s\n", elapsedTime(timer));
 
+	printf("Copying from device..");
+	startTime(&timer);
   cuda_ret = cudaMemcpy(Enrg_h, Enrg_d, num_temps*sizeof(float), cudaMemcpyDeviceToHost);
   if(cuda_ret != cudaSuccess) FATAL("Unable to copy results from device");
   cuda_ret = cudaMemcpy(Magn_h, Magn_d, num_temps*sizeof(float), cudaMemcpyDeviceToHost);
   if(cuda_ret != cudaSuccess) FATAL("Unable to copy results from device");
   cudaDeviceSynchronize();
+	stopTime(&timer); printf("%f s\n", elapsedTime(timer));
 	
 	for(int i=0; i < num_temps; i++) {
 		float *dev_ptr = latt_arr_h[i];

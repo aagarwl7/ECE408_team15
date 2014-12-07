@@ -2,8 +2,9 @@
 #include<stdio.h>
 #include<math.h>
 #include<time.h>
+#include"support.h"
 
-#define rand_latt_elem() PI_2*((float)rand()/RAND_MAX);
+#define rand_latt_elem_c() PI_2*((float)rand()/RAND_MAX);
 #define INITIAL_AVG_IND num_steps/5
 #define PI_2 6.283185307
 
@@ -25,6 +26,8 @@ int main(int argc, char **argv) {
     exit(0);
   }
 
+	Timer t;
+
   int num_temps = atoi(argv[1]);
   int latt_len = atoi(argv[2]);
   int num_steps = atoi(argv[3]);
@@ -32,7 +35,7 @@ int main(int argc, char **argv) {
   float *Temp = malloc(num_temps * sizeof(float));
   float *Enrg = malloc(num_temps * sizeof(float));
   float *Magn = malloc(num_temps * sizeof(float));
-  float *latt = malloc(num_temps * sizeof(float));
+  float *latt = malloc(latt_len * sizeof(float));
 
   srand(time(0));
 
@@ -42,12 +45,13 @@ int main(int argc, char **argv) {
   for(int i = 0; i < num_temps; i++, curT += T_step) 
     Temp[i] = curT;
 
+	startTime(&t);
   // Calculate energy and magnetization for each temperature in array
   for(int i = 0; i < num_temps; i++) {
     float avg_nrg = 0.0, avg_mag = 0.0;
     // Initialize random lattice and calculate inital energy
     for(int j = 0; j < latt_len; j++) {
-      latt[j] = rand_latt_elem();
+      latt[j] = rand_latt_elem_c();
     }
     //float nrg = calc_energy(latt, latt_len);
     magn_t magn;
@@ -56,7 +60,7 @@ int main(int argc, char **argv) {
     for(int j = 0; j < num_steps; j++) {
       // Randomly choose pertubation to lattice
       int rand_ind = (int)(((float)rand()/RAND_MAX)*latt_len);
-      float new_val = rand_latt_elem(); 
+      float new_val = rand_latt_elem_c(); 
       // Calculate effect of perturbation and randomly accept
       float delta_nrg = 2.*cos(new_val-latt[rand_ind])-2.; // -2. accounts for k == rand_ind
       for(int k = 0; k < latt_len; k++)
@@ -84,6 +88,8 @@ int main(int argc, char **argv) {
 		calc_mag(latt, latt_len, &magn);
     Magn[i] = norm_vect_len(magn);
   }
+	stopTime(&t);
+	printf("Elapsed time %f\n", elapsedTime(t));
 
   write_data(Temp, Enrg, Magn, num_temps);
 
