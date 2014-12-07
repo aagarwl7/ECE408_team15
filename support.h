@@ -4,7 +4,7 @@
 #include<sys/time.h>
 
 #define MIN_TEMP 0.05
-#define MAX_TEMP 4.0
+#define MAX_TEMP 2.0
 #define TEMP_DIFF 3.95
 #define PI_2 6.283185307
 #define rand_latt_elem() (PI_2*uniform())

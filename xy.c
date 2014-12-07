@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
 
   // Initialize temperature array
   float curT = 0.05;
-  float T_step = 4./num_temps;
+  float T_step = 2./num_temps;
   for(int i = 0; i < num_temps; i++, curT += T_step) 
     Temp[i] = curT;
 
