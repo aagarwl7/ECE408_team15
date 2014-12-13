@@ -6,60 +6,10 @@
 #define norm_vect_len(m) (sqrt(pow((m).x, 2) + pow((m).y, 2))/(m).num_elem)
 #define BLOCK_SIZE 1024
 
-typedef struct {
-  float x;
-  float y;
-  int num_elem;
-} magn_t;
-
-
 __device__ float global_temp[BLOCK_SIZE];
 __device__ float global_x[BLOCK_SIZE];
 __device__ float global_y[BLOCK_SIZE];
-__global__ void calc_energy(float **latt_arr, unsigned int latt_len, float *nrg, int ind) {
-  unsigned int index = blockIdx.x * BLOCK_SIZE + threadIdx.x;
 
-  __shared__ float local_temp[BLOCK_SIZE/2];
-  if(threadIdx.x < BLOCK_SIZE/2) local_temp[threadIdx.x] = 0.0;
-
-	float *latt = latt_arr[ind];
-
-  if(index >= latt_len) return;
-	
-  float retval = 2.0;
-  float spin = latt[index];
-	
-  for(int i = 0; i < latt_len; i++)
-    retval -= 2*__cosf(latt[i] - spin);
-  retval /= latt_len;
-	if(threadIdx.x > BLOCK_SIZE/2) local_temp[threadIdx.x-BLOCK_SIZE/2] = retval;
-  __syncthreads();
-  for(int stride = 2; stride < BLOCK_SIZE; stride <<= 1) {
-    if(index < BLOCK_SIZE/stride) 
-      retval += local_temp[threadIdx.x];
-    __syncthreads();
-    if(index >= BLOCK_SIZE/(stride<<1) && index < BLOCK_SIZE/stride)
-      local_temp[threadIdx.x-(BLOCK_SIZE/(stride<<1))] = retval;
-    __syncthreads();
-  }
-	
-  if(threadIdx.x == 0) {
-		global_temp[blockIdx.x] = retval;
-	}
-  __syncthreads();
-	
-  if(index >= gridDim.x) return;
-  for(int stride = 2; stride < gridDim.x; stride <<= 1) {
-    if(index % stride == 0)
-      global_temp[index] += global_temp[index + (stride >> 1)];
-  }
-  __syncthreads();
-	
-  if(index == 0) {
-		*nrg = global_temp[0];
-	}
-
-}
 __device__ float calc_delta_nrg(float new_val, float old_val, float *latt, int latt_len) {
 	float delta_nrg = 2.*__cosf(new_val-old_val)-2.;
 	for(int j = 0; j < latt_len; j++) {
@@ -82,7 +32,6 @@ __device__ void perturb_latt(float *latt, int latt_len, int num_steps, float tem
 __global__ void iterate_nrg(int num_temps, float **latt_arr, unsigned int latt_len, int num_steps, curandState *states, float *Enrg, float *Magn, int temp_i, float temp) {
 	int index = blockIdx.x * BLOCK_SIZE + threadIdx.x;
   if(index >= latt_len) return;
-  //__shared__ float temp_latt[BLOCK_SIZE];
 
 	curandState s;
 	if(temp_i == 0) {
@@ -148,7 +97,6 @@ __global__ void iterate_nrg(int num_temps, float **latt_arr, unsigned int latt_l
 		*global_y = 0.;
 	}
 	if(threadIdx.x == 0) {
-		//atomicAdd(Enrg, retval);
 		atomicAdd(global_x, x);
 		atomicAdd(global_y, y);
 	}
@@ -156,16 +104,12 @@ __global__ void iterate_nrg(int num_temps, float **latt_arr, unsigned int latt_l
 
   if(threadIdx.x == 0) {
 		global_temp[blockIdx.x] = retval;
-		//global_x[blockIdx.x] = x;
-		//global_y[blockIdx.x] = y;
 	}
   __syncthreads();
   if(index >= gridDim.x) return;
   for(int stride = 2; stride <= gridDim.x; stride <<= 1) {
     if(index % stride == 0) {
 			global_temp[index] += global_temp[index + (stride >> 1)];
-      //global_x[index] += global_x[index + (stride >> 1)];
-			//global_y[index] += global_y[index + (stride >> 1)];
 		}
 		__syncthreads();
   }
@@ -174,20 +118,6 @@ __global__ void iterate_nrg(int num_temps, float **latt_arr, unsigned int latt_l
 		*Magn = sqrt(pow(global_x[0], 2) + pow(global_y[0], 2));
 	}
 }
-
-
-			/*
-				for(int off = 0; off < latt_len; off += BLOCK_SIZE) {
-				temp_latt[threadIdx.x] = latt[off+threadIdx.x];
-				__syncthreads();
-				for(int j = 0; j < BLOCK_SIZE; j++)
-        delta_nrg -= 2*__cosf(new_val-temp_latt[j+off])-2*__cosf(old_val-temp_latt[j+off]);
-				}
-				delta_nrg /= latt_len;
-				if(curand_uniform(&s) < exp(-delta_nrg/temp) || delta_nrg < 0) {
-				latt[rand_ind] = new_val;
-				}
-			*/
 
 void find_xy_parameters(int num_temps, float **latt_arr, unsigned int latt_len, unsigned int num_steps, float *Enrg, float *Magn) {
   cudaError_t cuda_ret;
