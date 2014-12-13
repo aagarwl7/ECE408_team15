@@ -110,7 +110,8 @@ __global__ void iterate_nrg(int num_temps, float **latt_arr, unsigned int latt_l
 		local_y[threadIdx.x] = 0.0;
 	}
 	__syncthreads();
-
+ 
+	// Calculate energy and magnetization
   if(index >= latt_len) return;
 	
   float retval = 2.0;
@@ -142,29 +143,36 @@ __global__ void iterate_nrg(int num_temps, float **latt_arr, unsigned int latt_l
 		}
     __syncthreads();
   }
+	if(index == 0) {
+		*global_x = 0.;
+		*global_y = 0.;
+	}
+	if(threadIdx.x == 0) {
+		//atomicAdd(Enrg, retval);
+		atomicAdd(global_x, x);
+		atomicAdd(global_y, y);
+	}
+	__syncthreads();
 
   if(threadIdx.x == 0) {
 		global_temp[blockIdx.x] = retval;
-		global_x[blockIdx.x] = x;
-		global_y[blockIdx.x] = y;
+		//global_x[blockIdx.x] = x;
+		//global_y[blockIdx.x] = y;
 	}
   __syncthreads();
   if(index >= gridDim.x) return;
-
   for(int stride = 2; stride <= gridDim.x; stride <<= 1) {
     if(index % stride == 0) {
 			global_temp[index] += global_temp[index + (stride >> 1)];
-      global_x[index] += global_x[index + (stride >> 1)];
-			global_y[index] += global_y[index + (stride >> 1)];
+      //global_x[index] += global_x[index + (stride >> 1)];
+			//global_y[index] += global_y[index + (stride >> 1)];
 		}
 		__syncthreads();
   }
-
 	if(index == 0) {
 		*Enrg = global_temp[0];
 		*Magn = sqrt(pow(global_x[0], 2) + pow(global_y[0], 2));
 	}
-	
 }
 
 
@@ -192,15 +200,9 @@ void find_xy_parameters(int num_temps, float **latt_arr, unsigned int latt_len, 
 
 	for(int i = 0; i < num_temps; i++) {
 		float temp = MIN_TEMP+i*TEMP_DIFF/num_temps;
-		//printf("temp %f\n", temp);
-		cudaMemset(global_temp, 0, BLOCK_SIZE*sizeof(float));
-		cudaMemset(global_x, 0, BLOCK_SIZE*sizeof(float));
-		cudaMemset(global_y, 0, BLOCK_SIZE*sizeof(float));
 		iterate_nrg<<<grid_dim, block_dim>>>(num_temps, latt_arr, latt_len, num_steps, states, Enrg+i, Magn+i, i, temp);
 	}
   cudaDeviceSynchronize();
-	//for(int i = 0; i < num_temps; i++)
-	//	calc_energy<<<grid_dim, block_dim>>>(latt_arr, latt_len, Enrg+i, i);
   cudaFree(states);
 
 }
